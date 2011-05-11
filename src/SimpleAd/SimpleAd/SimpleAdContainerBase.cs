@@ -2,7 +2,7 @@
 
 namespace SimpleAD
 {
-    public abstract class SimpleAdContainerBase : ISimpleAdContainer
+    public class SimpleAdContainerBase : ISimpleAdContainer
     {
         public string Domain { get; set; }
         public string Container { get; set; }

@@ -2,13 +2,20 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.DirectoryServices;
+using System.Linq;
 
 namespace SimpleAD
 {
     public interface ISimpleAdRepository
     {
+        IList<string> PropertiesToLoad { get; set; }
+
         IEnumerable<DirectoryEntry> GetAll();
+        IEnumerable<DirectoryEntry> GetAll(string[] properties);
+
         IEnumerable<DirectoryEntry> FindAll(LdapQuery query);
+        IEnumerable<DirectoryEntry> FindAll(LdapQuery query, string[] properties);
+
         IEnumerable<DirectoryEntry> ResolveMembers(DirectoryEntry entry);
         IEnumerable<DirectoryEntry> ResolveMemberOf(DirectoryEntry entry);
         
@@ -23,35 +30,60 @@ namespace SimpleAD
         void RemoveGroup(string rootDn, string removeDn);
         void RemoveOrganizationalUnit(string rootDn, string removeDn);
     }
-
-    public class SimpleAdRepository<T> : ISimpleAdRepository where T : ISimpleAdContainer
+    
+    public class SimpleAdRepository : ISimpleAdRepository
     {
+        protected ISimpleAdRepository SpawnChild(string containerTypeAndName) {
+            var childContainer = new SimpleAdContainerBase(container.Domain, containerTypeAndName + "," + container.Container);
+            return new SimpleAdRepository(childContainer);
+        }
+
+        protected ISimpleAdRepository SpawnChild(string containerType, string name)
+        {
+            return SpawnChild(containerType + "=" + name);
+        }
+
+        public IList<string> PropertiesToLoad { get; set; }
         private readonly ISimpleAdContainer container;
 
-        public SimpleAdRepository(T container)
+        public SimpleAdRepository(ISimpleAdContainer container)
         {
             this.container = container;
         }
 
-        private string GetDirectoryPath()
+        protected string GetDirectoryPath()
         {
             return GetDirectoryPath(container.Container);
         }
-        private string GetDirectoryPath(string path)
+
+        protected string GetDirectoryPath(string path)
         {
             return string.Format(@"LDAP://{0}/{1}", container.Domain, path);
         }
 
         public IEnumerable<DirectoryEntry> GetAll()
         {
-            return FindAll(null);
+            return FindAll(null, PropertiesToLoad.ToArray());
         }
-        public IEnumerable<DirectoryEntry> FindAll(LdapQuery query) {
+        public IEnumerable<DirectoryEntry> GetAll(string[] properties) {
+            return FindAll(null, properties);
+        }
+
+        public IEnumerable<DirectoryEntry> FindAll(LdapQuery query)
+        {
+            return FindAll(query, PropertiesToLoad.ToArray());
+        }
+
+        public IEnumerable<DirectoryEntry> FindAll(LdapQuery query, string[] properties) {
             using (var root = new DirectoryEntry(GetDirectoryPath())) {
                 using (var searcher = new DirectorySearcher(root)) {
                     searcher.SizeLimit = 1000;
                     if (query != null) {
                         searcher.Filter = query.ToString();
+                        if (properties != null)
+                        {
+                            searcher.PropertiesToLoad.AddRange(properties);
+                        }
                     }
                     foreach (SearchResult de in searcher.FindAll())
                     {
@@ -150,7 +182,7 @@ namespace SimpleAD
             var de = CreateObject("organizationalunit", name, properties);
             return de;
         }
-        private DirectoryEntry CreateObject(string schemaClass, string name, Dictionary<string, object> properties)
+        protected DirectoryEntry CreateObject(string schemaClass, string name, Dictionary<string, object> properties)
         {
             using (var root = new DirectoryEntry(GetDirectoryPath()))
             {
@@ -167,6 +199,7 @@ namespace SimpleAD
                 return de;
             }
         }
+
     }
 
 }
